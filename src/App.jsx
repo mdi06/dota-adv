@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, ShieldAlert, ShieldCheck, Swords, X, TrendingUp, Zap } from 'lucide-react';
+import { Search, ShieldAlert, ShieldCheck, Swords, X, TrendingUp, Zap, Target } from 'lucide-react';
 import { getHeroMatchups } from './api/stratz';
 import BuildAnalyzer from './components/BuildAnalyzer';
+import LaneSimulator from './components/LaneSimulator';
 import { heroHasRole } from './utils/heroPositions';
 import { calculateSynergyBonus } from './utils/synergyEngine';
 import { analyzeDraft } from './utils/draftAnalyzer';
@@ -14,13 +15,16 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('All');
-  const [activeTab, setActiveTab] = useState('recommendations'); // 'recommendations' or 'build'
+  const [activeTab, setActiveTab] = useState('recommendations'); // 'recommendations', 'build', or 'lanes'
   const [analyzedHero, setAnalyzedHero] = useState(null);
   
   const [radiantDraft, setRadiantDraft] = useState([null, null, null, null, null]);
   const [direDraft, setDireDraft] = useState([null, null, null, null, null]);
   
   const [activeSlot, setActiveSlot] = useState({ team: 'radiant', index: 0 });
+  
+  // Store raw matchups for Lane Simulator
+  const [matchupsData, setMatchupsData] = useState({});
 
   // Recommendations state
   const [recommendations, setRecommendations] = useState([]);
@@ -58,15 +62,23 @@ function App() {
         // candidateStats[heroId] = { id, winsForEnemy, games, name }
         const candidateStats = {};
 
+        const newMatchupsData = {};
+
         // Fetch STRATZ data for each enemy
         for (const enemy of enemies) {
           const matchups = await getHeroMatchups(enemy.id);
           if (!matchups) continue;
 
+          newMatchupsData[enemy.id] = {};
+
           matchups.forEach(matchup => {
             const candidateId = matchup.vsHeroId;
             const games = matchup.matchCount;
-            const enemyWins = matchup.winRate > 1 ? (matchup.winRate / 100) * games : matchup.winRate * games;
+            const enemyWinRateDec = matchup.winRate > 1 ? matchup.winRate / 100 : matchup.winRate;
+            const enemyWins = enemyWinRateDec * games;
+            
+            // Store Candidate Advantage decimal for Lane Simulator
+            newMatchupsData[enemy.id][candidateId] = (1 - enemyWinRateDec) - 0.5;
 
             if (!candidateStats[candidateId]) {
               candidateStats[candidateId] = { id: candidateId, totalGames: 0, enemyTotalWins: 0 };
@@ -75,6 +87,8 @@ function App() {
             candidateStats[candidateId].enemyTotalWins += enemyWins;
           });
         }
+        
+        setMatchupsData(newMatchupsData);
 
         // Calculate combined win rate for Candidates against the Enemy team
         const results = [];
@@ -305,7 +319,13 @@ function App() {
                 className={`tab-btn ${activeTab === 'recommendations' ? 'active' : ''}`}
                 onClick={() => setActiveTab('recommendations')}
               >
-                <Swords size={18} /> Draft Recommendations
+                <Swords size={16} /> Draft Recommendations
+              </button>
+              <button 
+                className={`tab-btn ${activeTab === 'lanes' ? 'active' : ''}`}
+                onClick={() => setActiveTab('lanes')}
+              >
+                <Target size={16} /> Lane Simulator
               </button>
               <button 
                 className={`tab-btn ${activeTab === 'build' ? 'active' : ''}`}
@@ -374,6 +394,10 @@ function App() {
                      </div>
                   )}
                 </div>
+              </div>
+            ) : activeTab === 'lanes' ? (
+              <div className="tab-content" style={{ padding: '1.5rem' }}>
+                <LaneSimulator radiantDraft={radiantDraft} direDraft={direDraft} matchupsData={matchupsData} />
               </div>
             ) : (
               <div className="tab-content" style={{ padding: '1.5rem' }}>
