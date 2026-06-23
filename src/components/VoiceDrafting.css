@@ -1,0 +1,67 @@
+.voice-drafting {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+  margin-top: 1rem;
+}
+
+.voice-drafting.listening {
+  border-color: rgba(0, 255, 136, 0.3);
+  box-shadow: 0 0 15px rgba(0, 255, 136, 0.1);
+}
+
+.voice-drafting.unsupported {
+  opacity: 0.5;
+  color: #ffbbbb;
+  border-color: rgba(255, 68, 68, 0.2);
+}
+
+.mic-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+}
+
+.mic-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.mic-btn.active {
+  background: rgba(0, 255, 136, 0.15);
+  color: #00ff88;
+  border-color: rgba(0, 255, 136, 0.3);
+}
+
+.pulse-anim {
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.1); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.transcript-display {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  max-width: 300px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-style: italic;
+}

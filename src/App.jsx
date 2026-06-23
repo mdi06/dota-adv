@@ -3,7 +3,8 @@ import { Search, ShieldAlert, ShieldCheck, Swords, X, TrendingUp, Zap, Target } 
 import { getHeroMatchups } from './api/stratz';
 import BuildAnalyzer from './components/BuildAnalyzer';
 import LaneSimulator from './components/LaneSimulator';
-import { heroHasRole } from './utils/heroPositions';
+import VoiceDrafting from './components/VoiceDrafting';
+import { heroHasRole, HERO_ROLES } from './utils/heroPositions';
 import { calculateSynergyBonus } from './utils/synergyEngine';
 import { analyzeDraft } from './utils/draftAnalyzer';
 import './App.css';
@@ -131,6 +132,42 @@ function App() {
     calculateRecommendations();
   }, [direDraft, heroes, radiantDraft]);
 
+  const getSmartSlotIndex = (hero, currentDraft) => {
+    const roles = HERO_ROLES[hero.localized_name] || [];
+    for (const role of roles) {
+      let targetIdx = -1;
+      if (role === 'Safe Lane') targetIdx = 0;
+      else if (role === 'Mid Lane') targetIdx = 1;
+      else if (role === 'Offlane') targetIdx = 2;
+      else if (role === 'Support') targetIdx = 3;
+      else if (role === 'Hard Support') targetIdx = 4;
+
+      if (targetIdx !== -1 && currentDraft[targetIdx] === null) {
+        return targetIdx;
+      }
+    }
+    // Fallback: first empty slot
+    return currentDraft.findIndex(h => h === null);
+  };
+
+  const handleVoiceDraft = (team, hero) => {
+    if (team === 'radiant') {
+      const newDraft = [...radiantDraft];
+      const emptyIdx = getSmartSlotIndex(hero, newDraft);
+      if (emptyIdx !== -1) {
+        newDraft[emptyIdx] = hero;
+        setRadiantDraft(newDraft);
+      }
+    } else {
+      const newDraft = [...direDraft];
+      const emptyIdx = getSmartSlotIndex(hero, newDraft);
+      if (emptyIdx !== -1) {
+        newDraft[emptyIdx] = hero;
+        setDireDraft(newDraft);
+      }
+    }
+  };
+
   const handleHeroSelect = (hero) => {
     if (!activeSlot) return;
 
@@ -192,8 +229,11 @@ function App() {
   return (
     <div className="app-container">
       <header className="app-header">
-        <h1>Dota 2 Draft Assistant</h1>
-        <div className="subtitle">Real-time meta recommendations via STRATZ API</div>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <h1>Dota 2 Draft Assistant</h1>
+          <div className="subtitle">Real-time meta recommendations via STRATZ API</div>
+        </div>
+        <VoiceDrafting heroes={heroes} onCommandParsed={handleVoiceDraft} />
       </header>
 
       <div className="main-content">
