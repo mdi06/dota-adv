@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Activity, KeyRound } from 'lucide-react';
+import { Mic, Activity, KeyRound } from 'lucide-react';
 import { parseVoiceCommand } from '../utils/voiceCommands';
-import './VoiceDrafting.css';
 
 const VoiceDrafting = ({ heroes, onCommandParsed }) => {
   const [isListening, setIsListening] = useState(false);
@@ -64,7 +63,7 @@ const VoiceDrafting = ({ heroes, onCommandParsed }) => {
           }
         });
 
-        mediaRecorder.start(250); // Send audio chunks every 250ms
+        mediaRecorder.start(250);
       };
 
       socket.onmessage = (message) => {
@@ -76,7 +75,7 @@ const VoiceDrafting = ({ heroes, onCommandParsed }) => {
             if (parsed) {
               latestCallbackRef.current(parsed.team, parsed.hero);
               setTranscript(`[Success] Slotted ${parsed.hero.localized_name} into ${parsed.team}`);
-              stopListening(); // Automatically turn off mic after success
+              stopListening();
             } else {
               setTranscript(`[Unknown] Heard: "${t}"`);
             }
@@ -113,24 +112,24 @@ const VoiceDrafting = ({ heroes, onCommandParsed }) => {
 
   if (apiKeyMissing) {
     return (
-      <div className="voice-drafting unsupported">
+      <div className="flex items-center gap-2 p-3 border border-gray-700 bg-[#1a1a1a] text-gray-400 text-sm mb-6">
         <KeyRound size={16} /> 
-        <span style={{ fontSize: '0.8rem' }}>Missing VITE_DEEPGRAM_API_KEY in .env</span>
+        <span>Missing VITE_DEEPGRAM_API_KEY in .env</span>
       </div>
     );
   }
 
   return (
-    <div className={`voice-drafting ${isListening ? 'listening' : ''}`}>
+    <div className={`flex items-center gap-4 p-3 mb-6 border transition-colors ${isListening ? 'border-radiant bg-radiant/10' : 'border-gray-800 bg-[#1a1a1a]'}`}>
       <button 
-        className={`mic-btn ${isListening ? 'active' : ''}`} 
+        className={`flex items-center gap-2 px-4 py-2 border font-bold text-xs uppercase tracking-wider transition-colors ${isListening ? 'border-radiant text-radiant bg-radiant/20' : 'border-gray-600 text-gray-300 hover:bg-gray-800'}`} 
         onClick={toggleListening}
         title="Toggle Voice Auto-Draft"
       >
-        {isListening ? <Activity size={18} className="pulse-anim" /> : <Mic size={18} />}
+        {isListening ? <Activity size={16} className="animate-pulse" /> : <Mic size={16} />}
         <span>{isListening ? 'Listening' : 'Start Auto-Draft'}</span>
       </button>
-      {transcript && <div className="transcript-display">{transcript}</div>}
+      {transcript && <div className="text-sm font-mono text-gray-400 italic">{transcript}</div>}
     </div>
   );
 };

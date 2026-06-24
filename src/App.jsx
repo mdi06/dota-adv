@@ -4,39 +4,36 @@ import { getHeroMatchups } from './api/stratz';
 import BuildAnalyzer from './components/BuildAnalyzer';
 import LaneSimulator from './components/LaneSimulator';
 import VoiceDrafting from './components/VoiceDrafting';
+import DraftDiagnostics from './components/DraftDiagnostics';
 import { heroHasRole, HERO_ROLES } from './utils/heroPositions';
 import { calculateSynergyBonus } from './utils/synergyEngine';
 import { analyzeDraft } from './utils/draftAnalyzer';
-import './App.css';
 
-const OPENDOTA_API = 'https://api.opendota.com/api';
+const OPENDOTA_HEROES_API = 'https://raw.githubusercontent.com/odota/dotaconstants/master/build/heroes.json';
 
 function App() {
   const [heroes, setHeroes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('All');
-  const [activeTab, setActiveTab] = useState('recommendations'); // 'recommendations', 'build', or 'lanes'
+  const [activeTab, setActiveTab] = useState('recs');
   const [analyzedHero, setAnalyzedHero] = useState(null);
   
   const [radiantDraft, setRadiantDraft] = useState([null, null, null, null, null]);
   const [direDraft, setDireDraft] = useState([null, null, null, null, null]);
   
   const [activeSlot, setActiveSlot] = useState({ team: 'radiant', index: 0 });
-  
-  // Store raw matchups for Lane Simulator
   const [matchupsData, setMatchupsData] = useState({});
-
-  // Recommendations state
   const [recommendations, setRecommendations] = useState([]);
   const [calculating, setCalculating] = useState(false);
+  const [apiError, setApiError] = useState(null);
 
-  // Load heroes on mount
   useEffect(() => {
-    fetch(`${OPENDOTA_API}/heroes`)
+    fetch(OPENDOTA_HEROES_API)
       .then(res => res.json())
       .then(data => {
-        const sorted = data.sort((a, b) => a.localized_name.localeCompare(b.localized_name));
+        const heroesArray = Object.values(data);
+        const sorted = heroesArray.sort((a, b) => a.localized_name.localeCompare(b.localized_name));
         setHeroes(sorted);
         setLoading(false);
       })
@@ -46,28 +43,32 @@ function App() {
       });
   }, []);
 
-  // Recalculate recommendations when Dire draft changes
-  // In a real app, you'd calculate based on your team (radiant/dire), but let's assume we are Radiant picking against Dire.
   useEffect(() => {
     const calculateRecommendations = async () => {
-      const enemies = direDraft.filter(Boolean);
-      if (enemies.length === 0) {
+      if (direDraft.every(h => h === null)) {
         setRecommendations([]);
         return;
       }
 
       setCalculating(true);
+      setApiError(null);
 
       try {
-        // Map to accumulate candidate hero stats
-        // candidateStats[heroId] = { id, winsForEnemy, games, name }
         const candidateStats = {};
-
         const newMatchupsData = {};
 
-        // Fetch STRATZ data for each enemy
+        const enemies = direDraft.filter(Boolean);
+
         for (const enemy of enemies) {
-          const matchups = await getHeroMatchups(enemy.id);
+          let matchups;
+          try {
+            matchups = await getHeroMatchups(enemy.id);
+          } catch (e) {
+            setApiError(e.message);
+            setRecommendations([]);
+            setCalculating(false);
+            return;
+          }
           if (!matchups) continue;
 
           newMatchupsData[enemy.id] = {};
@@ -75,10 +76,18 @@ function App() {
           matchups.forEach(matchup => {
             const candidateId = matchup.vsHeroId;
             const games = matchup.matchCount;
-            const enemyWinRateDec = matchup.winRate > 1 ? matchup.winRate / 100 : matchup.winRate;
-            const enemyWins = enemyWinRateDec * games;
             
-            // Store Candidate Advantage decimal for Lane Simulator
+            let enemyWins = 0;
+            let enemyWinRateDec = 0;
+
+            if (matchup.winCount !== undefined) {
+              enemyWins = matchup.winCount;
+              enemyWinRateDec = games > 0 ? enemyWins / games : 0;
+            } else {
+              enemyWinRateDec = matchup.winRate > 1 ? matchup.winRate / 100 : (matchup.winRate || 0);
+              enemyWins = enemyWinRateDec * games;
+            }
+            
             newMatchupsData[enemy.id][candidateId] = (1 - enemyWinRateDec) - 0.5;
 
             if (!candidateStats[candidateId]) {
@@ -91,7 +100,6 @@ function App() {
         
         setMatchupsData(newMatchupsData);
 
-        // Calculate combined win rate for Candidates against the Enemy team
         const results = [];
         const draftedIds = new Set([
           ...radiantDraft.filter(Boolean).map(h => h.id),
@@ -100,7 +108,7 @@ function App() {
 
         for (const [idStr, stats] of Object.entries(candidateStats)) {
           const id = parseInt(idStr, 10);
-          if (draftedIds.has(id)) continue; // Don't recommend heroes already picked
+          if (draftedIds.has(id)) continue;
 
           if (stats.totalGames < 50) continue;
 
@@ -118,7 +126,6 @@ function App() {
           }
         }
 
-        // Sort descending by candidate win rate
         results.sort((a, b) => b.winRate - a.winRate);
         setRecommendations(results);
 
@@ -146,7 +153,6 @@ function App() {
         return targetIdx;
       }
     }
-    // Fallback: first empty slot
     return currentDraft.findIndex(h => h === null);
   };
 
@@ -227,125 +233,146 @@ function App() {
   }, [heroes, searchTerm, radiantDraft, direDraft]);
 
   return (
-    <div className="app-container">
-      <header className="app-header">
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <h1>Dota 2 Draft Assistant</h1>
-          <div className="subtitle">Real-time meta recommendations via STRATZ API</div>
+    <div className="min-h-screen bg-[#111111] text-gray-200 font-sans p-6">
+      <header className="mb-6 pb-4 border-b border-gray-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black uppercase tracking-widest text-gray-100">Dota 2 Draft Assistant</h1>
+          <div className="text-xs text-gray-500 font-mono mt-1">REAL-TIME META RECOMMENDATIONS VIA STRATZ API</div>
         </div>
         <VoiceDrafting heroes={heroes} onCommandParsed={handleVoiceDraft} />
       </header>
 
-      <div className="main-content">
-        <aside className="glass-panel draft-tracker">
-          <h2>Current Draft</h2>
-          
-          <div className="team-section">
-            <div className="team-title radiant-title">
-              <ShieldCheck size={20} /> Radiant (Your Team)
-            </div>
-            <div className="slots-container">
-              {radiantDraft.map((hero, idx) => (
-                <div 
-                  key={`rad-${idx}`} 
-                  className={`draft-slot radiant ${activeSlot?.team === 'radiant' && activeSlot?.index === idx ? 'active' : ''}`}
-                  onClick={() => {
-                    setActiveSlot({ team: 'radiant', index: idx });
-                    if (hero) {
-                      setAnalyzedHero(hero);
-                      setActiveTab('build');
-                    }
-                  }}
-                >
-                  <div className="slot-position-badge">{['Safe Lane', 'Mid Lane', 'Offlane', 'Support', 'Hard Support'][idx]}</div>
-                  {hero ? (
-                    <div className="slot-hero">
-                      <img src={`https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/${hero.name.replace('npc_dota_hero_', '')}.png`} alt={hero.localized_name} />
-                      <div className="slot-hero-info">
-                        <span className="hero-name">{hero.localized_name}</span>
-                        <span className="hero-roles">{hero.roles?.slice(0, 2).join(', ')}</span>
-                      </div>
-                      {hero && (
-                        <button className="remove-hero-btn" onClick={(e) => removeHero('radiant', idx, e)}>
+      <div className="flex flex-col lg:flex-row gap-6">
+        <aside className="w-full lg:w-80 flex-shrink-0">
+          <div className="border border-gray-800 bg-[#161616] p-5">
+            <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400 mb-6 pb-2 border-b border-gray-800">Current Draft</h2>
+            
+            <div className="mb-8">
+              <div className="flex items-center gap-2 font-bold uppercase tracking-wider text-radiant mb-3">
+                <ShieldCheck size={18} /> Radiant (Your Team)
+              </div>
+              <div className="flex flex-col gap-2">
+                {radiantDraft.map((hero, idx) => (
+                  <div 
+                    key={`rad-${idx}`} 
+                    className={`relative flex items-center h-14 border cursor-pointer transition-colors ${activeSlot?.team === 'radiant' && activeSlot?.index === idx ? 'border-radiant bg-radiant/10' : 'border-gray-800 bg-[#1a1a1a] hover:border-gray-600'}`}
+                    onClick={() => {
+                      setActiveSlot({ team: 'radiant', index: idx });
+                      if (hero) {
+                        setAnalyzedHero(hero);
+                        setActiveTab('build');
+                      }
+                    }}
+                  >
+                    <div className="absolute -left-[1px] top-0 bottom-0 w-1 bg-radiant opacity-50"></div>
+                    <div className="w-6 shrink-0 h-full flex items-center justify-center border-r border-gray-800/50 bg-[#111] text-[10px] font-bold text-gray-600 leading-none" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
+                      {['SAFE', 'MID', 'OFF', 'SUPP', 'HARD'][idx]}
+                    </div>
+                    {hero ? (
+                      <div className="flex items-center w-full h-full pr-2">
+                        <img className="h-full w-20 object-cover border-r border-gray-800" src={`https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/${hero.name.replace('npc_dota_hero_', '')}.png`} alt={hero.localized_name} />
+                        <div className="flex flex-col justify-center px-3 overflow-hidden whitespace-nowrap">
+                          <span className="font-bold text-sm text-gray-200 truncate">{hero.localized_name}</span>
+                          <span className="text-[10px] text-gray-500 uppercase font-mono">{hero.roles?.slice(0, 2).join(', ')}</span>
+                        </div>
+                        <button className="ml-auto text-gray-500 hover:text-red-400 p-1" onClick={(e) => removeHero('radiant', idx, e)}>
                           <X size={14} />
                         </button>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="slot-placeholder">Select Hero...</span>
-                  )}
-                </div>
-              ))}
-            </div>
-            {draftWarnings.length > 0 && (
-              <div className="draft-warnings">
-                {draftWarnings.map((warning, i) => (
-                  <div key={i} className={`warning-item ${warning.type}`}>
-                    <ShieldAlert size={14} />
-                    <span>{warning.text}</span>
+                      </div>
+                    ) : (
+                      <span className="text-xs font-mono text-gray-600 px-4 uppercase tracking-wider">Select Hero...</span>
+                    )}
                   </div>
                 ))}
               </div>
-            )}
-          </div>
-
-          <div className="team-section">
-            <h3 style={{ color: 'var(--dire-color)' }}><ShieldAlert size={16} /> DIRE (ENEMY TEAM)</h3>
-            <div className="slots-container">
-              {direDraft.map((hero, idx) => (
-                <div 
-                  key={`dire-${idx}`} 
-                  className={`draft-slot dire ${activeSlot?.team === 'dire' && activeSlot?.index === idx ? 'active' : ''}`}
-                  onClick={() => setActiveSlot({ team: 'dire', index: idx })}
-                >
-                  <div className="slot-position-badge">{['Safe Lane', 'Mid Lane', 'Offlane', 'Support', 'Hard Support'][idx]}</div>
-                  {hero ? (
-                    <div className="slot-hero">
-                      <img src={`https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/${hero.name.replace('npc_dota_hero_', '')}.png`} alt={hero.localized_name} />
-                      <div className="slot-hero-info">
-                        <span className="hero-name">{hero.localized_name}</span>
-                        <span className="hero-roles">{hero.roles?.slice(0, 2).join(', ')}</span>
-                      </div>
-                      <button className="remove-btn" onClick={(e) => removeHero('dire', idx, e)}><X size={16} /></button>
+              
+              {draftWarnings.length > 0 && (
+                <div className="mt-4 flex flex-col gap-2">
+                  {draftWarnings.map((warning, i) => (
+                    <div key={i} className={`flex items-start gap-2 p-2 text-xs font-semibold border ${warning.type === 'critical' ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-amber-500/10 border-amber-500/30 text-amber-400'}`}>
+                      <ShieldAlert size={14} className="mt-0.5 shrink-0" />
+                      <span>{warning.text}</span>
                     </div>
-                  ) : (
-                    <span className="slot-placeholder">Select Hero...</span>
-                  )}
+                  ))}
                 </div>
-              ))}
+              )}
+
+              <DraftDiagnostics radiantDraft={radiantDraft} />
             </div>
+
+            <div>
+              <div className="flex items-center gap-2 font-bold uppercase tracking-wider text-dire mb-3">
+                <ShieldAlert size={18} /> Dire (Enemy Team)
+              </div>
+              <div className="flex flex-col gap-2">
+                {direDraft.map((hero, idx) => (
+                  <div 
+                    key={`dire-${idx}`} 
+                    className={`relative flex items-center h-14 border cursor-pointer transition-colors ${activeSlot?.team === 'dire' && activeSlot?.index === idx ? 'border-dire bg-dire/10' : 'border-gray-800 bg-[#1a1a1a] hover:border-gray-600'}`}
+                    onClick={() => setActiveSlot({ team: 'dire', index: idx })}
+                  >
+                    <div className="absolute -left-[1px] top-0 bottom-0 w-1 bg-dire opacity-50"></div>
+                    <div className="w-6 shrink-0 h-full flex items-center justify-center border-r border-gray-800/50 bg-[#111] text-[10px] font-bold text-gray-600 leading-none" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
+                      {['SAFE', 'MID', 'OFF', 'SUPP', 'HARD'][idx]}
+                    </div>
+                    {hero ? (
+                      <div className="flex items-center w-full h-full pr-2">
+                        <img className="h-full w-20 object-cover border-r border-gray-800" src={`https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/${hero.name.replace('npc_dota_hero_', '')}.png`} alt={hero.localized_name} />
+                        <div className="flex flex-col justify-center px-3 overflow-hidden whitespace-nowrap">
+                          <span className="font-bold text-sm text-gray-200 truncate">{hero.localized_name}</span>
+                          <span className="text-[10px] text-gray-500 uppercase font-mono">{hero.roles?.slice(0, 2).join(', ')}</span>
+                        </div>
+                        <button className="ml-auto text-gray-500 hover:text-red-400 p-1" onClick={(e) => removeHero('dire', idx, e)}>
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-xs font-mono text-gray-600 px-4 uppercase tracking-wider">Select Hero...</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            <button className="mt-6 w-full py-2 border border-gray-700 bg-[#111] text-xs font-bold uppercase tracking-widest text-gray-400 hover:bg-gray-800 hover:text-white transition-colors" onClick={handleClear}>
+              Clear Draft
+            </button>
           </div>
         </aside>
 
-        <div className="hero-grid-section">
-          <div className="glass-panel">
-            <div className="search-bar" style={{ marginBottom: '1.5rem' }}>
-              <Search className="search-icon" size={20} />
+        <main className="flex-1 flex flex-col gap-6">
+          <div className="border border-gray-800 bg-[#161616] p-5">
+            <div className="flex items-center gap-3 border border-gray-700 bg-[#111] px-3 py-2 mb-5">
+              <Search className="text-gray-500" size={18} />
               <input 
                 type="text" 
-                placeholder="Search heroes to draft..." 
+                className="bg-transparent border-none outline-none text-sm text-gray-200 w-full placeholder-gray-600 font-mono"
+                placeholder="SEARCH HEROES..." 
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
 
             {loading ? (
-              <div className="loader">Loading hero data...</div>
+              <div className="p-8 text-center text-sm font-mono text-gray-500">LOADING HERO DATA...</div>
             ) : (
-              <div className="grid-container">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(60px,1fr))] gap-2">
                 {filteredHeroes.map(hero => (
                   !hero.isHidden && (
                     <div 
                       key={hero.id} 
-                      className={`hero-card ${hero.isDrafted ? 'disabled' : ''}`}
+                      className={`relative aspect-[4/3] border cursor-pointer group overflow-hidden ${hero.isDrafted ? 'border-gray-800 opacity-20 grayscale' : 'border-gray-700 hover:border-gray-300'}`}
                       onClick={() => !hero.isDrafted && handleHeroSelect(hero)}
                     >
                       <img 
+                        className="w-full h-full object-cover transition-transform group-hover:scale-110"
                         src={`https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/${hero.name.replace('npc_dota_hero_', '')}.png`} 
                         alt={hero.localized_name} 
                         loading="lazy"
                       />
-                      <div className="hero-name-tooltip">{hero.localized_name}</div>
+                      <div className="absolute inset-0 bg-black/80 flex items-center justify-center p-1 text-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-white leading-tight">{hero.localized_name}</span>
+                      </div>
                     </div>
                   )
                 ))}
@@ -353,22 +380,21 @@ function App() {
             )}
           </div>
 
-          <div className="glass-panel recommendations-panel" style={{ padding: 0, overflow: 'hidden' }}>
-            <div className="tabs-header">
-              <button 
-                className={`tab-btn ${activeTab === 'recommendations' ? 'active' : ''}`}
-                onClick={() => setActiveTab('recommendations')}
+          <div className="border border-gray-800 bg-[#161616]">
+            <div className="flex gap-4 border-b border-gray-800 mb-6 px-6 pt-6">
+              <button
+                onClick={() => setActiveTab('recs')}
+                className={`pb-3 text-xs font-bold uppercase tracking-widest transition-colors flex items-center gap-2 ${activeTab === 'recs' ? 'text-radiant border-b-2 border-radiant' : 'text-gray-500 hover:text-gray-300'}`}
               >
-                <Swords size={16} /> Draft Recommendations
+                <Swords size={16} /> Draft Recs
               </button>
-              <button 
-                className={`tab-btn ${activeTab === 'lanes' ? 'active' : ''}`}
+              <button
                 onClick={() => setActiveTab('lanes')}
+                className={`pb-3 text-xs font-bold uppercase tracking-widest transition-colors flex items-center gap-2 ${activeTab === 'lanes' ? 'text-radiant border-b-2 border-radiant' : 'text-gray-500 hover:text-gray-300'}`}
               >
-                <Target size={16} /> Lane Simulator
+                <Target size={16} /> Lane Sim
               </button>
-              <button 
-                className={`tab-btn ${activeTab === 'build' ? 'active' : ''}`}
+              <button
                 onClick={() => {
                   setActiveTab('build');
                   if (!analyzedHero) {
@@ -376,76 +402,75 @@ function App() {
                     if (firstHero) setAnalyzedHero(firstHero);
                   }
                 }}
+                className={`pb-3 text-xs font-bold uppercase tracking-widest transition-colors flex items-center gap-2 ${activeTab === 'build' ? 'text-radiant border-b-2 border-radiant' : 'text-gray-500 hover:text-gray-300'}`}
               >
-                <Zap size={18} /> Build Analyzer
+                <Zap size={16} /> Build Analyzer
               </button>
             </div>
 
-            {activeTab === 'recommendations' ? (
-              <div className="tab-content" style={{ padding: '1.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <h2>
-                    Top Counters against Dire 
-                    {calculating && <span style={{ fontSize: '0.8rem', marginLeft: '1rem', color: 'var(--accent-primary)', opacity: 0.8 }}>Updating...</span>}
-                  </h2>
-                  <select 
-                    value={roleFilter} 
-                    onChange={(e) => setRoleFilter(e.target.value)}
-                    style={{ padding: '0.5rem', borderRadius: '8px', background: 'var(--bg-dark)', color: 'var(--text-main)', border: '1px solid var(--border-color)', outline: 'none' }}
-                  >
-                    {['All', 'Safe Lane', 'Mid Lane', 'Offlane', 'Support', 'Hard Support'].map(r => (
-                      <option key={r} value={r}>{r}</option>
-                    ))}
-                  </select>
-                </div>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
-                  Select heroes for the Dire team to see real-time meta recommendations. Filter by role to find the perfect fit.
-                </p>
-                
-                <div className="rec-list" style={{ opacity: calculating ? 0.6 : 1, transition: 'opacity 0.2s' }}>
-                  {calculating && recommendations.length === 0 ? (
-                     <div className="loader" style={{ height: 'auto', padding: '2rem', width: '100%', gridColumn: '1 / -1' }}>
-                        Fetching data & running algorithm...
-                     </div>
-                  ) : recommendations.length > 0 ? (
-                    recommendations.filter(rec => heroHasRole(rec.hero.localized_name, roleFilter, rec.hero.roles || []))
-                    .slice(0, 10)
-                    .map((rec, i) => (
-                      <div key={rec.hero.id} className="rec-card">
-                        <img 
-                          className="rec-img"
-                          src={`https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/${rec.hero.name.replace('npc_dota_hero_', '')}.png`} 
-                          alt={rec.hero.localized_name} 
-                        />
-                        <div className="rec-info">
-                          <span className="rec-name">#{i + 1} {rec.hero.localized_name}</span>
-                          <span className="rec-score" style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-                            <TrendingUp size={14} /> {rec.winRate.toFixed(1)}% Win Rate
-                            {rec.synergyBonus > 0 && <span style={{ color: '#00ff88', marginLeft: '4px', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>(+{rec.synergyBonus}% Synergy)</span>}
-                          </span>
+            <div className="p-6">
+              {activeTab === 'recs' ? (
+                <>
+                  <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-sm font-bold uppercase tracking-widest text-gray-300">
+                      Top Counters Against Dire {calculating && <span className="text-radiant ml-2 text-[10px] animate-pulse">UPDATING...</span>}
+                    </h3>
+                    <select 
+                      value={roleFilter} 
+                      onChange={(e) => setRoleFilter(e.target.value)}
+                      className="bg-[#161616] border border-gray-800 text-gray-400 text-xs px-3 py-1 uppercase font-mono cursor-pointer outline-none hover:border-gray-600 transition-colors"
+                    >
+                      {['All', 'Safe Lane', 'Mid Lane', 'Offlane', 'Support', 'Hard Support'].map(r => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 transition-opacity ${calculating ? 'opacity-50' : 'opacity-100'}`}>
+                    {apiError ? (
+                       <div className="col-span-full p-8 border border-red-500/50 bg-red-500/10 font-mono text-sm text-red-400 break-words">
+                          <p className="font-bold mb-2 uppercase">STRATZ API ERROR DETECTED:</p>
+                          <p>{apiError}</p>
+                          <p className="mt-4 text-xs text-red-400/80">Please send a screenshot of this box so I can fix the GraphQL query.</p>
+                       </div>
+                    ) : calculating && recommendations.length === 0 ? (
+                       <div className="col-span-full p-8 text-center border border-gray-800 font-mono text-sm text-gray-500">
+                          FETCHING STRATZ DATA...
+                       </div>
+                    ) : recommendations.length > 0 ? (
+                      recommendations.filter(rec => heroHasRole(rec.hero.localized_name, roleFilter, rec.hero.roles || []))
+                      .slice(0, 12)
+                      .map((rec, i) => (
+                        <div key={rec.hero.id} className="flex border border-gray-800 bg-[#111] hover:border-gray-600 transition-colors cursor-pointer" onClick={() => handleHeroSelect(rec.hero)}>
+                          <img 
+                            className="w-16 h-12 object-cover border-r border-gray-800"
+                            src={`https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/${rec.hero.name.replace('npc_dota_hero_', '')}.png`} 
+                            alt={rec.hero.localized_name} 
+                          />
+                          <div className="flex flex-col justify-center px-3 py-1 overflow-hidden">
+                            <span className="font-bold text-xs text-gray-200 truncate uppercase tracking-wider">#{i + 1} {rec.hero.localized_name}</span>
+                            <span className="flex items-center gap-1 text-[10px] font-mono mt-0.5 text-gray-400">
+                              <TrendingUp size={10} className="text-gray-500" /> {rec.winRate.toFixed(1)}% WR
+                              {rec.synergyBonus > 0 && <span className="text-radiant ml-1">(+{rec.synergyBonus}%)</span>}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    ))
-                  ) : direDraft.some(Boolean) ? (
-                     <div className="loader" style={{ height: 'auto', padding: '1rem' }}>No data available or error fetching. Check console.</div>
-                  ) : (
-                     <div className="rec-card" style={{ opacity: 0.5 }}>
-                       <div style={{ padding: '1rem' }}>Awaiting Dire inputs...</div>
-                     </div>
-                  )}
-                </div>
-              </div>
-            ) : activeTab === 'lanes' ? (
-              <div className="tab-content" style={{ padding: '1.5rem' }}>
+                      ))
+                    ) : direDraft.some(Boolean) ? (
+                       <div className="col-span-full p-8 text-center border border-gray-800 font-mono text-sm text-gray-500">NO MATCHUP DATA AVAILABLE.</div>
+                    ) : (
+                       <div className="col-span-full p-8 text-center border border-gray-800 font-mono text-sm text-gray-500">AWAITING ENEMY DRAFT INPUTS...</div>
+                    )}
+                  </div>
+                </>
+              ) : activeTab === 'lanes' ? (
                 <LaneSimulator radiantDraft={radiantDraft} direDraft={direDraft} matchupsData={matchupsData} />
-              </div>
-            ) : (
-              <div className="tab-content" style={{ padding: '1.5rem' }}>
-                <BuildAnalyzer analyzedHero={analyzedHero} direDraft={direDraft} radiantDraft={radiantDraft} />
-              </div>
-            )}
+              ) : (
+                <BuildAnalyzer analyzedHero={analyzedHero} teamDraft={radiantDraft} direDraft={direDraft} />
+              )}
+            </div>
           </div>
-        </div>
+        </main>
       </div>
     </div>
   );

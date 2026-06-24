@@ -1,3 +1,50 @@
+export const calculateDraftScores = (radiantDraft) => {
+  const heroes = radiantDraft.filter(Boolean);
+  
+  // Base 0 for empty draft
+  if (heroes.length === 0) {
+    return { control: 0, push: 0, frontline: 0, sustain: 0, magicDmg: 0, physicalDmg: 0 };
+  }
+
+  let controlScore = 0;
+  let pushScore = 0;
+  let frontlineScore = 0;
+  let sustainScore = 0;
+  let magicDmg = 0;
+  let physicalDmg = 0;
+
+  heroes.forEach(h => {
+    // Control / Stuns
+    if (h.roles.includes('Disabler')) controlScore += 35;
+    if (['Earthshaker', 'Lion', 'Shadow Shaman', 'Tidehunter', 'Enigma', 'Bane', 'Magnus', 'Faceless Void'].includes(h.localized_name)) controlScore += 20;
+
+    // Tower Push
+    if (h.roles.includes('Pusher')) pushScore += 35;
+    if (['Leshrac', 'Luna', 'Tiny', 'Troll Warlord', 'Terrorblade', 'Sniper', "Nature's Prophet", 'Lycan', 'Broodmother', 'Lone Druid', 'Death Prophet'].includes(h.localized_name)) pushScore += 25;
+
+    // Frontline
+    if (h.roles.includes('Initiator') || h.roles.includes('Durable')) frontlineScore += 30;
+    if (h.primary_attr === 'str') frontlineScore += 10;
+    if (['Axe', 'Centaur Warrunner', 'Bristleback', 'Tidehunter', 'Underlord'].includes(h.localized_name)) frontlineScore += 20;
+
+    // Sustain / Save
+    if (['Dazzle', 'Oracle', 'Omniknight', 'Abaddon', 'Treant Protector', 'Winter Wyvern', 'Io', 'Chen', 'Enchantress', 'Warlock'].includes(h.localized_name)) sustainScore += 40;
+    
+    // Damage Types
+    if (h.roles.includes('Nuker') || h.primary_attr === 'int') magicDmg += 25;
+    if (h.roles.includes('Carry') && (h.primary_attr === 'agi' || h.primary_attr === 'str')) physicalDmg += 30;
+  });
+
+  return {
+    control: Math.min(100, controlScore),
+    push: Math.min(100, pushScore),
+    frontline: Math.min(100, frontlineScore),
+    sustain: Math.min(100, sustainScore),
+    magicDmg: Math.min(100, magicDmg),
+    physicalDmg: Math.min(100, physicalDmg)
+  };
+};
+
 export const analyzeDraft = (radiantDraft) => {
   const heroes = radiantDraft.filter(Boolean);
   const warnings = [];
