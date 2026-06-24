@@ -116,11 +116,12 @@ function App() {
           const heroObj = heroes.find(h => h.id === id);
           
           if (heroObj) {
-            const synergyBonus = calculateSynergyBonus(heroObj.localized_name, radiantDraft.filter(Boolean));
+            const { totalBonus: synergyBonus, combos: womboCombos } = calculateSynergyBonus(heroObj.localized_name, radiantDraft.filter(Boolean));
             results.push({
               hero: heroObj,
               winRate: candidateWinRate + synergyBonus,
               synergyBonus: synergyBonus,
+              womboCombos: womboCombos,
               games: stats.totalGames
             });
           }
@@ -453,6 +454,15 @@ function App() {
                               <TrendingUp size={10} className="text-gray-500" /> {rec.winRate.toFixed(1)}% WR
                               {rec.synergyBonus > 0 && <span className="text-radiant ml-1">(+{rec.synergyBonus}%)</span>}
                             </span>
+                            {rec.womboCombos && rec.womboCombos.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {rec.womboCombos.map(combo => (
+                                  <span key={combo} className="text-[8px] bg-radiant/20 border border-radiant/30 text-radiant px-1 py-0.5 rounded uppercase tracking-wider">
+                                    🔥 {combo}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                       ))

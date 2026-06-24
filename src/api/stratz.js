@@ -1,14 +1,20 @@
-const STRATZ_API_URL = '/api/stratz';
+const STRATZ_API_URL = 'https://api.stratz.com/graphql';
 const OPENDOTA_API_URL = 'https://api.opendota.com/api';
 
 // Cache to prevent rate-limiting from OpenDota (60 req/min limit)
 const matchupCache = {};
 
 export const fetchStratzGraphQL = async (query, variables = {}) => {
+  const apiKey = import.meta.env.VITE_STRATZ_API_KEY;
+  if (!apiKey) {
+    throw new Error('Missing VITE_STRATZ_API_KEY in .env');
+  }
+
   const response = await fetch(STRATZ_API_URL, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
     },
     body: JSON.stringify({ query, variables })
   });
@@ -43,7 +49,11 @@ export const getHeroMatchups = (heroId) => {
             advantage {
               heroId
               matchCountVs
-              vs
+              vs {
+                heroId2
+                synergy
+                winsAverage
+              }
             }
           }
         }
@@ -57,28 +67,21 @@ export const getHeroMatchups = (heroId) => {
           throw new Error(`STRATZ returned empty data! Payload: ${JSON.stringify(data).substring(0, 150)}`);
         }
         
-        return matchups.map(m => {
-          // If vs is an array of matchup data objects, it will throw a GraphQL error first.
-          // If vs is a Float, we use it directly as the advantage.
-          let advantageVal = 0;
-          if (Array.isArray(m.vs)) {
-            // Unlikely if it's a Float, but just in case it returns an array of floats
-            advantageVal = m.vs[0] || 0;
-          } else if (typeof m.vs === 'number') {
-            advantageVal = m.vs;
-          } else if (m.vs && m.vs.synergy) {
-             advantageVal = m.vs.synergy;
+        // vs is an array of { heroId2, synergy, winsAverage } objects
+        // We flatten it: for each entry in advantage, iterate over vs[]
+        const result = [];
+        for (const m of matchups) {
+          if (!Array.isArray(m.vs)) continue;
+          for (const v of m.vs) {
+            result.push({
+              vsHeroId: v.heroId2,
+              matchCount: m.matchCountVs || 0,
+              winRate: v.winsAverage ? v.winsAverage * 100 : 50,
+              synergy: v.synergy || 0
+            });
           }
-
-          // Convert advantage decimal (e.g. 0.05) to percentage and add to 50%
-          const advantagePercent = advantageVal > -1 && advantageVal < 1 ? advantageVal * 100 : advantageVal;
-
-          return {
-            vsHeroId: m.heroId,
-            matchCount: m.matchCountVs || 0,
-            winRate: 50 + advantagePercent
-          };
-        });
+        }
+        return result;
       } catch (err) {
         try {
           const res = await fetch(`${OPENDOTA_API_URL}/heroes/${heroId}/matchups`);
@@ -113,4 +116,43 @@ export const introspectSchema = async () => {
   `;
   const data = await fetchStratzGraphQL(query);
   return data;
+};
+
+export const getHeroItemBuilds = async (heroId) => {
+  const query = `
+    query {
+      heroStats {
+        itemFullPurchase(heroId: ${parseInt(heroId, 10)}) {
+          itemId
+          matchCount
+          winCount
+        }
+      }
+    }
+  `;
+  try {
+    const data = await fetchStratzGraphQL(query);
+    const items = data?.heroStats?.itemFullPurchase;
+    if (!items || items.length === 0) return null;
+
+    // Sort by matchCount descending and take the top 6 most purchased items
+    // De-duplicate by itemId first (same item can appear multiple times)
+    const byItem = {};
+    for (const entry of items) {
+      if (!byItem[entry.itemId]) {
+        byItem[entry.itemId] = { itemId: entry.itemId, matchCount: 0, winCount: 0 };
+      }
+      byItem[entry.itemId].matchCount += entry.matchCount;
+      byItem[entry.itemId].winCount += entry.winCount;
+    }
+    
+    const sorted = Object.values(byItem)
+      .sort((a, b) => b.matchCount - a.matchCount)
+      .slice(0, 6);
+    
+    return sorted.map(i => i.itemId);
+  } catch (err) {
+    console.error("Failed to fetch hero item builds:", err);
+    return null;
+  }
 };

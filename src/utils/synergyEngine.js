@@ -33,24 +33,29 @@ const SYNERGIES = [
 
 export const calculateSynergyBonus = (potentialHeroName, radiantDraft) => {
   let totalBonus = 0;
+  const triggeredCombos = [];
   const draftNames = radiantDraft.filter(Boolean).map(h => h.localized_name);
   
-  if (draftNames.length === 0) return 0;
+  if (draftNames.length === 0) return { totalBonus: 0, combos: [] };
 
   SYNERGIES.forEach(synergy => {
     // If the potential hero is a core for this synergy, check if a partner exists in the draft
     if (synergy.cores.includes(potentialHeroName)) {
       if (draftNames.some(name => synergy.partners.includes(name))) {
         totalBonus += synergy.bonus;
+        triggeredCombos.push(synergy.name);
       }
     }
     // If the potential hero is a partner, check if a core exists in the draft
     if (synergy.partners.includes(potentialHeroName)) {
       if (draftNames.some(name => synergy.cores.includes(name))) {
         totalBonus += synergy.bonus;
+        if (!triggeredCombos.includes(synergy.name)) {
+          triggeredCombos.push(synergy.name);
+        }
       }
     }
   });
 
-  return totalBonus;
+  return { totalBonus, combos: triggeredCombos };
 };

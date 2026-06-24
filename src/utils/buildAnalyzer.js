@@ -5,39 +5,65 @@ const SITUATIONAL_RULES = [
     condition: (enemies) => enemies.some(h => ['Riki', 'Bounty Hunter', 'Weaver', 'Clinkz', 'Nyx Assassin', 'Treant Protector'].includes(h.localized_name)),
     suggestedItems: ['dust', 'ward_sentry', 'gem'],
     reason: "Enemy has invisibility. Prioritize detection.",
-    targetRoles: ['Support', 'Nuker', 'Disabler', 'Initiator']
+    targetRoles: ['Support', 'Hard Support'] // Only tell supports to buy wards
   },
   {
     condition: (enemies) => enemies.some(h => ['Phantom Assassin', 'Windranger', 'Brewmaster', 'Troll Warlord', 'Huskar'].includes(h.localized_name)),
     suggestedItems: ['monkey_king_bar', 'bloodthorn'],
-    reason: "Enemy has high evasion. MKB is highly recommended.",
-    targetRoles: ['Carry', 'Escape', 'Pusher']
+    reason: "Enemy has high evasion. MKB or Bloodthorn is highly recommended.",
+    targetRoles: ['Safe Lane', 'Mid Lane'] // Cores buy MKB
+  },
+  {
+    condition: (enemies) => enemies.some(h => ['Phantom Assassin', 'Windranger', 'Brewmaster', 'Troll Warlord', 'Huskar'].includes(h.localized_name)),
+    suggestedItems: ['solar_crest', 'ghost'],
+    reason: "Enemy has high physical burst and evasion. Defensive items needed.",
+    targetRoles: ['Support', 'Hard Support', 'Offlane'] // Supports buy Solar Crest/Ghost
   },
   {
     condition: (enemies) => enemies.some(h => ['Phantom Lancer', 'Naga Siren', 'Chaos Knight', 'Terrorblade'].includes(h.localized_name)),
-    suggestedItems: ['mjollnir', 'shivas_guard', 'bfury'],
+    suggestedItems: ['mjollnir', 'bfury'],
     reason: "Enemy relies on illusions. Consider AoE clear items.",
-    targetRoles: ['Carry', 'Initiator', 'Durable', 'Pusher']
+    targetRoles: ['Safe Lane', 'Mid Lane'] // Cores buy Mjollnir/Bfury
+  },
+  {
+    condition: (enemies) => enemies.some(h => ['Phantom Lancer', 'Naga Siren', 'Chaos Knight', 'Terrorblade'].includes(h.localized_name)),
+    suggestedItems: ['shivas_guard', 'crimson_guard'],
+    reason: "Enemy relies on physical illusions. Aura defense is crucial.",
+    targetRoles: ['Offlane'] // Offlane buys Shivas/Crimson
   },
   {
     condition: (enemies) => enemies.some(h => ['Zeus', 'Skywrath Mage', 'Pugna', 'Leshrac', 'Lion', 'Lina'].includes(h.localized_name)),
-    suggestedItems: ['black_king_bar', 'pipe', 'glimmer_cape'],
+    suggestedItems: ['black_king_bar', 'mage_slayer'],
+    reason: "Heavy magical burst damage detected.",
+    targetRoles: ['Safe Lane', 'Mid Lane'] // Cores buy BKB/Mage Slayer
+  },
+  {
+    condition: (enemies) => enemies.some(h => ['Zeus', 'Skywrath Mage', 'Pugna', 'Leshrac', 'Lion', 'Lina'].includes(h.localized_name)),
+    suggestedItems: ['pipe', 'glimmer_cape', 'force_staff'],
     reason: "Heavy magical burst damage detected. Defensive items are crucial.",
-    targetRoles: ['Carry', 'Support', 'Initiator', 'Durable', 'Escape', 'Nuker', 'Disabler', 'Pusher']
+    targetRoles: ['Support', 'Hard Support', 'Offlane'] // Supports/Offlane buy Pipe/Glimmer
   },
   {
     condition: (enemies) => enemies.some(h => ['Lifestealer', 'Juggernaut', 'Ursa', 'Slark', 'Troll Warlord'].includes(h.localized_name)),
     suggestedItems: ['ghost', 'heavens_halberd', 'force_staff'],
     reason: "Enemy has heavy physical burst/lockdown. Defensive positioning items are needed.",
-    targetRoles: ['Support', 'Nuker', 'Disabler', 'Initiator']
+    targetRoles: ['Support', 'Hard Support', 'Offlane']
   },
   {
     condition: (enemies) => enemies.some(h => ['Slardar', 'Bounty Hunter', 'Templar Assassin'].includes(h.localized_name)),
-    suggestedItems: ['manta', 'lotus_orb'],
+    suggestedItems: ['manta', 'black_king_bar'],
     reason: "Enemy relies on tracking/armor-reduction debuffs. Dispels are highly effective.",
-    targetRoles: ['Carry', 'Support', 'Escape', 'Durable', 'Initiator']
+    targetRoles: ['Safe Lane', 'Mid Lane']
+  },
+  {
+    condition: (enemies) => enemies.some(h => ['Slardar', 'Bounty Hunter', 'Templar Assassin'].includes(h.localized_name)),
+    suggestedItems: ['lotus_orb', 'euls'],
+    reason: "Enemy relies on tracking/armor-reduction debuffs. Dispels are highly effective.",
+    targetRoles: ['Offlane', 'Support', 'Hard Support']
   }
 ];
+
+import { heroHasRole } from './heroPositions';
 
 export const analyzeTeamBuild = (analyzedHero, radiantDraft) => {
   const teammates = radiantDraft.filter(Boolean);
@@ -127,8 +153,11 @@ export const analyzeSituationalBuild = (direDraft, analyzedHero) => {
 
   for (const rule of SITUATIONAL_RULES) {
     if (rule.condition(enemies)) {
-      // Only suggest if the hero's roles intersect with the rule's target roles
-      const matchesRole = analyzedHero.roles.some(role => rule.targetRoles.includes(role));
+      // Check if the hero matches ANY of the targetRoles for this rule
+      const matchesRole = rule.targetRoles.some(targetRole => 
+        heroHasRole(analyzedHero.localized_name, targetRole, analyzedHero.roles || [])
+      );
+      
       if (matchesRole) {
         suggestions.push({
           items: rule.suggestedItems,
@@ -139,4 +168,101 @@ export const analyzeSituationalBuild = (direDraft, analyzedHero) => {
   }
 
   return suggestions;
+};
+
+export const generateItemRoadmap = (analyzedHero) => {
+  if (!analyzedHero) return null;
+
+  const isCarry = analyzedHero.roles.includes('Carry');
+  const isSupport = analyzedHero.roles.includes('Support');
+  const isOfflane = analyzedHero.roles.includes('Offlane') || analyzedHero.roles.includes('Initiator') || analyzedHero.roles.includes('Durable');
+  
+  const attr = analyzedHero.primary_attr; // 'agi', 'str', 'int', 'all'
+
+  // Default fallback
+  let early = ['magic_wand', 'boots', 'tpscroll'];
+  let core = ['black_king_bar', 'blink'];
+  let late = ['sphere', 'overwhelming_blink'];
+
+  if (isSupport) {
+    if (attr === 'int') {
+      early = ['tranquil_boots', 'magic_wand', 'wind_lace'];
+      core = ['force_staff', 'glimmer_cape', 'aether_lens'];
+      late = ['sheepstick', 'aeon_disk', 'octarine_core'];
+    } else {
+      early = ['tranquil_boots', 'magic_wand', 'bracer'];
+      core = ['pavise', 'force_staff', 'solar_crest'];
+      late = ['lotus_orb', 'aeon_disk', 'crimson_guard'];
+    }
+  } else if (isCarry) {
+    if (attr === 'agi') {
+      early = ['wraith_band', 'power_treads', 'magic_wand'];
+      core = ['manta', 'black_king_bar', 'skadi'];
+      late = ['butterfly', 'satanic', 'abyssal_blade'];
+    } else if (attr === 'str') {
+      early = ['bracer', 'phase_boots', 'magic_wand'];
+      core = ['armlet', 'black_king_bar', 'heavens_halberd'];
+      late = ['heart', 'assault', 'overwhelming_blink'];
+    } else {
+      early = ['null_talisman', 'power_treads', 'magic_wand'];
+      core = ['witch_blade', 'black_king_bar', 'shivas_guard'];
+      late = ['sheepstick', 'bloodthorn', 'refresher'];
+    }
+  } else if (isOfflane) {
+    early = ['bracer', 'phase_boots', 'magic_wand'];
+    core = ['blink', 'vanguard', 'pipe'];
+    late = ['shivas_guard', 'overwhelming_blink', 'assault'];
+  } else {
+    early = ['bottle', 'power_treads', 'magic_wand'];
+    core = ['blink', 'black_king_bar', 'witch_blade'];
+    late = ['sheepstick', 'octarine_core', 'shivas_guard'];
+  }
+
+  return { early, core, late };
+};
+
+export const analyzeLiveSynergy = (analyzedHero, teamDraft, matchupsData) => {
+  if (!matchupsData || !analyzedHero) return null;
+
+  const teammates = teamDraft.filter(h => h && h.id !== analyzedHero.id);
+  
+  const synergyData = teammates.map(teammate => {
+    const matchup = matchupsData.find(m => m.vsHeroId === teammate.id);
+    return {
+      hero: teammate,
+      synergy: matchup ? matchup.synergy : 0
+    };
+  });
+
+  const totalSynergy = synergyData.reduce((sum, data) => sum + data.synergy, 0);
+  const avgSynergy = teammates.length > 0 ? (totalSynergy / teammates.length).toFixed(2) : 0;
+
+  return {
+    score: avgSynergy,
+    details: synergyData
+  };
+};
+
+export const analyzeLiveCounters = (analyzedHero, direDraft, matchupsData) => {
+  if (!matchupsData || !analyzedHero) return [];
+
+  const enemies = direDraft.filter(Boolean);
+  
+  const counterData = enemies.map(enemy => {
+    const matchup = matchupsData.find(m => m.vsHeroId === enemy.id);
+    if (!matchup) return null;
+    
+    // winRate is analyzedHero's win rate against the enemy
+    const advantage = matchup.winRate - 50; 
+    
+    return {
+      hero: enemy,
+      winRate: matchup.winRate,
+      advantage: advantage.toFixed(2),
+      matchCount: matchup.matchCount
+    };
+  }).filter(Boolean);
+
+  // Sort by biggest advantage for analyzed hero
+  return counterData.sort((a, b) => b.advantage - a.advantage);
 };
